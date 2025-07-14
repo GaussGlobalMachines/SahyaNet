@@ -1,0 +1,13 @@
+[package]
+name = "seismicbft-syncer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+seismicbft-types.workspace = true
+
+commonware-cryptography.workspace = true
+commonware-storage.workspace = true
+commonware-runtime.workspace = true
+
+futures.workspace = true

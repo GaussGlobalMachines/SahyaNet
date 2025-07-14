@@ -1,0 +1,6 @@
+[package]
+name = "seismicbft-node"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

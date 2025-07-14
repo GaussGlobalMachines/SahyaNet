@@ -1,0 +1,20 @@
+[package]
+name = "seismicbft-types"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+alloy-rpc-types-engine.workspace = true
+alloy-eips.workspace = true
+alloy-primitives.workspace = true
+alloy-consensus = "1.0.12"
+
+bytes.workspace = true
+commonware-cryptography.workspace = true
+commonware-consensus.workspace = true
+commonware-codec.workspace = true
+serde.workspace = true
+ethereum_ssz = "0.9.0"
+ethereum_ssz_derive = "0.9.0"
+
+
