@@ -4,7 +4,7 @@ use alloy_primitives::{Bytes as AlloyBytes, U256};
 use alloy_rpc_types_engine::ExecutionPayloadV3;
 use bytes::{Buf, BufMut};
 use commonware_codec::{EncodeSize, FixedSize as _, Read, Write};
-use commonware_cryptography::{Hasher, Sha256, sha256::Digest};
+use commonware_cryptography::{Committable, Digestible, Hasher, Sha256, sha256::Digest};
 use ssz::Encode as _;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -158,6 +158,22 @@ impl Read for Block {
         ssz::Decode::from_ssz_bytes(buf.copy_to_bytes(buf.remaining()).chunk()).map_err(|_| {
             commonware_codec::Error::Invalid("Block", "Unable to decode bytes for block")
         })
+    }
+}
+
+impl Digestible for Block {
+    type Digest = Digest;
+
+    fn digest(&self) -> Digest {
+        self.digest
+    }
+}
+
+impl Committable for Block {
+    type Commitment = Digest;
+
+    fn commitment(&self) -> Digest {
+        self.digest
     }
 }
 

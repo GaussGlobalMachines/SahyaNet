@@ -11,3 +11,4 @@ commonware-storage.workspace = true
 commonware-runtime.workspace = true
 
 futures.workspace = true
+tracing.workspace = true

@@ -4,3 +4,22 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+seismicbft-syncer.workspace = true
+seismicbft-types.workspace = true
+seismicbft-application.workspace = true
+
+commonware-broadcast.workspace = true
+commonware-codec.workspace = true
+commonware-consensus.workspace = true
+commonware-cryptography.workspace = true
+commonware-p2p.workspace = true
+commonware-runtime.workspace = true
+commonware-utils.workspace = true
+
+anyhow.workspace = true
+futures.workspace = true
+governor.workspace = true
+rand.workspace = true
+tracing.workspace = true
+clap.workspace = true
+dirs = "6.0.0"

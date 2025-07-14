@@ -1,20 +1,25 @@
 use crate::{
+    ApplicationConfig, Supervisor,
     engine_client::EngineClient,
     ingress::{Mailbox, Message},
 };
 use alloy_rpc_types_engine::ForkchoiceState;
 use anyhow::{Context as _, Result, anyhow};
+use commonware_broadcast::{Broadcaster as _, buffered};
 use commonware_consensus::simplex::types::View;
 use commonware_cryptography::sha256::Digest;
+use commonware_p2p::Recipients;
+use commonware_runtime::{Clock, Handle, Metrics, Spawner};
 use futures::{
     StreamExt as _,
     channel::{mpsc, oneshot},
     future::try_join,
 };
+use rand::Rng;
 use seismicbft_syncer::ingress::Mailbox as SyncerMailbox;
 
 use futures::task::{Context, Poll};
-use seismicbft_types::Block;
+use seismicbft_types::{Block, PublicKey};
 use std::{
     pin::Pin,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -43,28 +48,43 @@ fn oneshot_closed_future<T>(sender: &mut oneshot::Sender<T>) -> ChannelClosedFut
     ChannelClosedFuture { sender }
 }
 
-pub struct Actor {
+pub struct Actor<R: Rng + Spawner + Metrics + Clock> {
+    context: R,
     mailbox: mpsc::Receiver<Message>,
     engine_client: EngineClient,
     forkchoice: ForkchoiceState,
     built_block: Option<Block>,
 }
 
-impl Actor {
-    pub fn new(engine_url: String, engine_jwt: &str) -> (Self, Mailbox) {
-        let (tx, rx) = mpsc::channel(10000); // TODO: Get channel size from config
+impl<R: Rng + Spawner + Metrics + Clock> Actor<R> {
+    pub fn new(context: R, cfg: ApplicationConfig) -> (Self, Mailbox, Supervisor) {
+        let (tx, rx) = mpsc::channel(cfg.mailbox_size);
         (
             Self {
+                context,
                 mailbox: rx,
-                engine_client: EngineClient::new(engine_url, engine_jwt),
+                engine_client: EngineClient::new(cfg.engine_url, &cfg.engine_jwt), // todo: why are these types dif?
                 forkchoice: ForkchoiceState::default(),
                 built_block: None,
             },
             Mailbox::new(tx),
+            Supervisor::new(cfg.participants),
         )
     }
 
-    pub async fn run(mut self, mut syncer: SyncerMailbox) {
+    pub fn start(
+        mut self,
+        syncer: seismicbft_syncer::Mailbox,
+        buffer: buffered::Mailbox<PublicKey, Block>,
+    ) -> Handle<()> {
+        self.context.spawn_ref()(self.run(syncer, buffer))
+    }
+
+    pub async fn run(
+        mut self,
+        mut syncer: SyncerMailbox,
+        mut buffer: buffered::Mailbox<PublicKey, Block>,
+    ) {
         while let Some(message) = self.mailbox.next().await {
             match message {
                 Message::Genesis { response } => {
@@ -111,8 +131,8 @@ impl Actor {
                         );
                     }
 
-                    // send block to syncer to be broadcasted
-                    syncer.broadcast(built_block).await;
+                    let ack = buffer.broadcast(Recipients::All, built_block).await;
+                    drop(ack);
                 }
 
                 Message::Verify {

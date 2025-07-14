@@ -19,6 +19,11 @@ commonware-cryptography = "0.0.54"
 commonware-storage = "0.0.54"
 commonware-runtime = "0.0.54"
 commonware-codec = "0.0.54"
+commonware-p2p = "0.0.54"
+commonware-broadcast = "0.0.54"
+commonware-utils = "0.0.54"
+governor = "0.6.3"
+rand = "0.8.5"
 serde = {version = "1.0.219", features = ["derive"]}
 
 futures = "0.3.31"
