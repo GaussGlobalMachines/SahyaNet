@@ -6,8 +6,9 @@ use std::{
 };
 
 use clap::{Args, Parser, Subcommand};
+use commonware_cryptography::Signer;
 use commonware_p2p::authenticated;
-use commonware_runtime::{Metrics as _, Runner as _, tokio};
+use commonware_runtime::{Handle, Metrics as _, Runner, Spawner as _, tokio};
 use commonware_utils::union_unique;
 use futures::future::try_join_all;
 use governor::Quota;
@@ -16,8 +17,8 @@ use tracing::{Level, error};
 
 use crate::{
     config::{
-        BROADCASTER_CHANNEL, EngineConfig, MAX_MESSAGE_SIZE, MESSAGE_BACKLOG, RESOLVER_CHANNEL,
-        VOTER_CHANNEL,
+        BACKFILLER_CHANNEL, BROADCASTER_CHANNEL, EngineConfig, MAX_MESSAGE_SIZE, MESSAGE_BACKLOG,
+        RESOLVER_CHANNEL, VOTER_CHANNEL,
     },
     engine::Engine,
     keys::KeySubCmd,
@@ -81,7 +82,7 @@ pub struct Flags {
         long,
         default_value_t = String::from("debug")
     )]
-    log_level: String,
+    pub log_level: String,
 }
 
 impl Command {
@@ -106,6 +107,10 @@ impl Command {
             peers.clone(),
         )
         .unwrap();
+
+        let our_ip = committee
+            .ip_of(&config.signer.public_key())
+            .expect("This node is not on the committee");
 
         // Initialize runtime
         let cfg = tokio::Config::default()
@@ -136,7 +141,7 @@ impl Command {
                 config.signer.clone(),
                 &p2p_namespace,
                 SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), flags.port),
-                SocketAddr::new("0.0.0.0".parse().unwrap(), flags.port), // todo need to get our own ip here
+                our_ip,
                 committee.validators,
                 MAX_MESSAGE_SIZE,
             );
@@ -167,13 +172,20 @@ impl Command {
                 Some(3),
             );
 
+            let backfiller = network.register(
+                BACKFILLER_CHANNEL,
+                config.backfill_quota,
+                MESSAGE_BACKLOG,
+                Some(3),
+            );
+
             // Create network
             let p2p = network.start();
             // create engine
             let engine = Engine::new(context.with_label("engine"), config).await;
 
             // Start engine
-            let engine = engine.start(voter, resolver, broadcaster);
+            let engine = engine.start(voter, resolver, broadcaster, backfiller);
 
             // Wait for any task to error
             if let Err(e) = try_join_all(vec![p2p, engine]).await {
@@ -181,4 +193,86 @@ impl Command {
             }
         })
     }
+}
+
+pub fn run_node_with_runtime(
+    context: commonware_runtime::tokio::Context,
+    flags: Flags,
+) -> Handle<()> {
+    // todo(dalton): Handle committee needs to be standaridized and handles through flags
+    let committee = GenesisCommittee::load_from_file("test_committee.toml".into());
+
+    let engine_url = format!("http://0.0.0.0:{}", flags.engine_port);
+    let peers: Vec<PublicKey> = committee.validators.iter().map(|v| v.0.clone()).collect();
+
+    let config = EngineConfig::get_engine_config(
+        engine_url,
+        flags.engine_jwt_path.clone(),
+        flags.key_path.clone(),
+        peers.clone(),
+    )
+    .unwrap();
+
+    let our_ip = committee
+        .ip_of(&config.signer.public_key())
+        .expect("This node is not on the committee");
+
+    context.spawn(async move |context| {
+        // configure network
+        let p2p_namespace = union_unique(NAMESPACE, b"_P2P");
+
+        let mut p2p_cfg = authenticated::Config::aggressive(
+            config.signer.clone(),
+            &p2p_namespace,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), flags.port),
+            our_ip,
+            committee.validators,
+            MAX_MESSAGE_SIZE,
+        );
+        p2p_cfg.mailbox_size = config.mailbox_size;
+
+        // Start p2p
+        let (mut network, mut oracle) =
+            authenticated::Network::new(context.with_label("network"), p2p_cfg);
+
+        // Provide authorized peers
+        oracle.register(0, peers.clone()).await;
+
+        // Register voter channel
+        let voter_limit = Quota::per_second(NonZeroU32::new(128).unwrap());
+        let voter = network.register(VOTER_CHANNEL, voter_limit, MESSAGE_BACKLOG, None);
+
+        // Register resolver channel
+        let resolver_limit = Quota::per_second(NonZeroU32::new(128).unwrap());
+        let resolver = network.register(RESOLVER_CHANNEL, resolver_limit, MESSAGE_BACKLOG, None);
+
+        // Register broadcast channel
+        let broadcaster_limit = Quota::per_second(NonZeroU32::new(8).unwrap());
+        let broadcaster = network.register(
+            BROADCASTER_CHANNEL,
+            broadcaster_limit,
+            MESSAGE_BACKLOG,
+            Some(3),
+        );
+
+        let backfiller = network.register(
+            BACKFILLER_CHANNEL,
+            config.backfill_quota,
+            MESSAGE_BACKLOG,
+            Some(3),
+        );
+
+        // Create network
+        let p2p = network.start();
+        // create engine
+        let engine = Engine::new(context.with_label("engine"), config).await;
+
+        // Start engine
+        let engine = engine.start(voter, resolver, broadcaster, backfiller);
+
+        // Wait for any task to error
+        if let Err(e) = try_join_all(vec![p2p, engine]).await {
+            error!(?e, "task failed");
+        }
+    })
 }

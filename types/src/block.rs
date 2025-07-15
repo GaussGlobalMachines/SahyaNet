@@ -3,10 +3,17 @@ use std::ops::Deref as _;
 use alloy_primitives::{Bytes as AlloyBytes, U256};
 use alloy_rpc_types_engine::ExecutionPayloadV3;
 use bytes::{Buf, BufMut};
-use commonware_codec::{EncodeSize, FixedSize as _, Read, Write};
-use commonware_cryptography::{Committable, Digestible, Hasher, Sha256, sha256::Digest};
+use commonware_codec::{EncodeSize, Error, FixedSize as _, Read, ReadExt as _, Write};
+use commonware_consensus::simplex::types::{Finalization, Notarization, Viewable};
+use commonware_cryptography::{
+    Committable, Digestible, Hasher, Sha256, bls12381::Signature, sha256::Digest,
+};
 use ssz::Encode as _;
 
+pub const GENESIS_HASH: [u8; 32] = [
+    0x68, 0x37, 0x13, 0x72, 0x9f, 0xcb, 0x72, 0xbe, 0x6f, 0x3d, 0x8b, 0x88, 0xc8, 0xcd, 0xa3, 0xe1,
+    0x05, 0x69, 0xd7, 0x3b, 0x96, 0x40, 0xd3, 0xbf, 0x6f, 0x51, 0x84, 0xd9, 0x4b, 0xd9, 0x76, 0x16,
+];
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Block {
     pub parent: Digest,
@@ -59,6 +66,16 @@ impl Block {
             block_value,
             digest,
         }
+    }
+
+    pub fn genesis_hash() -> [u8; 32] {
+        GENESIS_HASH
+    }
+}
+
+impl Viewable for Block {
+    fn view(&self) -> commonware_consensus::simplex::types::View {
+        self.height
     }
 }
 
@@ -174,6 +191,92 @@ impl Committable for Block {
 
     fn commitment(&self) -> Digest {
         self.digest
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Notarized {
+    pub proof: Notarization<Signature, Digest>,
+    pub block: Block,
+}
+
+impl Notarized {
+    pub fn new(proof: Notarization<Signature, Digest>, block: Block) -> Self {
+        Self { proof, block }
+    }
+}
+
+impl Write for Notarized {
+    fn write(&self, buf: &mut impl BufMut) {
+        self.proof.write(buf);
+        self.block.write(buf);
+    }
+}
+
+impl Read for Notarized {
+    type Cfg = ();
+
+    fn read_cfg(buf: &mut impl Buf, _: &Self::Cfg) -> Result<Self, Error> {
+        let proof = Notarization::<Signature, Digest>::read_cfg(buf, &buf.remaining())?; // todo: get a test on this to make sure buf.remaining is safe
+        let block = Block::read(buf)?;
+
+        // Ensure the proof is for the block
+        if proof.proposal.payload != block.digest() {
+            return Err(Error::Invalid(
+                "types::Notarized",
+                "Proof payload does not match block digest",
+            ));
+        }
+        Ok(Self { proof, block })
+    }
+}
+
+impl EncodeSize for Notarized {
+    fn encode_size(&self) -> usize {
+        self.proof.encode_size() + self.block.encode_size()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Finalized {
+    pub proof: Finalization<Signature, Digest>,
+    pub block: Block,
+}
+
+impl Finalized {
+    pub fn new(proof: Finalization<Signature, Digest>, block: Block) -> Self {
+        Self { proof, block }
+    }
+}
+
+impl Write for Finalized {
+    fn write(&self, buf: &mut impl BufMut) {
+        self.proof.write(buf);
+        self.block.write(buf);
+    }
+}
+
+impl Read for Finalized {
+    type Cfg = ();
+
+    fn read_cfg(buf: &mut impl Buf, _: &Self::Cfg) -> Result<Self, Error> {
+        let proof = Finalization::<Signature, Digest>::read_cfg(buf, &buf.remaining())?;
+        let block = Block::read(buf)?;
+
+        // Ensure the proof is for the block
+        if proof.proposal.payload != block.digest() {
+            return Err(Error::Invalid(
+                "types::Finalized",
+                "Proof payload does not match block digest",
+            ));
+        }
+        Ok(Self { proof, block })
+    }
+}
+
+impl EncodeSize for Finalized {
+    fn encode_size(&self) -> usize {
+        self.proof.encode_size() + self.block.encode_size()
     }
 }
 

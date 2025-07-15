@@ -43,7 +43,7 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
         let (application, application_mailbox, supervisor) = seismicbft_application::Actor::new(
             context.with_label("application"),
             ApplicationConfig {
-                participants: cfg.participants,
+                participants: cfg.participants.clone(),
                 mailbox_size: cfg.mailbox_size,
                 engine_url: cfg.engine_url,
                 engine_jwt: cfg.engine_jwt,
@@ -63,8 +63,16 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
         );
 
         // create the syncer
+        let syncer_config = seismicbft_syncer::Config {
+            partition_prefix: cfg.partition_prefix.clone(),
+            public_key: cfg.signer.public_key(),
+            participants: cfg.participants,
+            mailbox_size: cfg.mailbox_size,
+            backfill_quota: cfg.backfill_quota,
+            activity_timeout: cfg.activity_timeout,
+        };
         let (syncer, syncer_mailbox) =
-            seismicbft_syncer::Actor::new(context.with_label("syncer")).await;
+            seismicbft_syncer::Actor::new(context.with_label("syncer"), syncer_config).await;
 
         // create simplex
         let simplex = Simplex::new(
@@ -123,10 +131,19 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
             impl Sender<PublicKey = PublicKey>,
             impl Receiver<PublicKey = PublicKey>,
         ),
+        backfill_network: (
+            impl Sender<PublicKey = PublicKey>,
+            impl Receiver<PublicKey = PublicKey>,
+        ),
     ) -> Handle<()> {
-        self.context
-            .clone()
-            .spawn(|_| self.run(voter_network, resolver_network, broadcast_network))
+        self.context.clone().spawn(|_| {
+            self.run(
+                voter_network,
+                resolver_network,
+                broadcast_network,
+                backfill_network,
+            )
+        })
     }
 
     /// Start the `simplex` consensus engine.
@@ -146,15 +163,17 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
             impl Sender<PublicKey = PublicKey>,
             impl Receiver<PublicKey = PublicKey>,
         ),
+        backfill_network: (
+            impl Sender<PublicKey = PublicKey>,
+            impl Receiver<PublicKey = PublicKey>,
+        ),
     ) {
         // start the application
-        let app_handle = self
-            .application
-            .start(self.syncer_mailbox, self.buffer_mailbox);
+        let app_handle = self.application.start(self.syncer_mailbox);
         // start the buffer
         let buffer_handle = self.buffer.start(broadcast_network);
         // start the syncer
-        let syncer_handle = self.syncer.start();
+        let syncer_handle = self.syncer.start(self.buffer_mailbox, backfill_network);
         // start simplex
         let simplex_handle = self.simplex.start(voter_network, resolver_network);
 

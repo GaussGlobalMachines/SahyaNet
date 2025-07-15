@@ -1,10 +1,11 @@
 mod block;
 use std::{net::SocketAddr, path::PathBuf};
 
-pub use block::Block;
+pub use block::*;
 
 use commonware_codec::DecodeExt;
 use commonware_consensus::simplex::types::Activity as CActivity;
+
 use commonware_utils::from_hex_formatted;
 
 pub type Digest = commonware_cryptography::sha256::Digest;
@@ -52,5 +53,31 @@ impl GenesisCommittee {
             .collect();
 
         GenesisCommittee { validators }
+    }
+
+    pub fn ip_of(&self, public_key: &PublicKey) -> Option<SocketAddr> {
+        self.validators
+            .iter()
+            .find_map(|v| if &v.0 == public_key { Some(v.1) } else { None })
+    }
+}
+
+#[test]
+fn test_loading_committee() {
+    let path = PathBuf::from("test_committee.toml");
+
+    GenesisCommittee::load_from_file(PathBuf::from("test_committee.toml"));
+}
+
+#[test]
+fn gen_private_keys() {
+    for i in 0..4 {
+        let pk = <PrivateKey as commonware_cryptography::PrivateKeyExt>::from_seed(i);
+        println!("Private key:");
+        println!("{}", pk.to_string());
+
+        println!("Public Key:");
+        println!("{}", commonware_cryptography::Signer::public_key(&pk));
+        println!("_____________________");
     }
 }

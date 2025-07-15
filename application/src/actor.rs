@@ -5,26 +5,23 @@ use crate::{
 };
 use alloy_rpc_types_engine::ForkchoiceState;
 use anyhow::{Context as _, Result, anyhow};
-use commonware_broadcast::{Broadcaster as _, buffered};
 use commonware_consensus::simplex::types::View;
 use commonware_cryptography::sha256::Digest;
-use commonware_p2p::Recipients;
 use commonware_runtime::{Clock, Handle, Metrics, Spawner};
 use futures::{
     StreamExt as _,
     channel::{mpsc, oneshot},
-    future::try_join,
 };
 use rand::Rng;
 use seismicbft_syncer::ingress::Mailbox as SyncerMailbox;
 
 use futures::task::{Context, Poll};
-use seismicbft_types::{Block, PublicKey};
+use seismicbft_types::Block;
 use std::{
     pin::Pin,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 // Define a future that checks if the oneshot channel is closed using a mutable reference
 struct ChannelClosedFuture<'a, T> {
@@ -59,12 +56,19 @@ pub struct Actor<R: Rng + Spawner + Metrics + Clock> {
 impl<R: Rng + Spawner + Metrics + Clock> Actor<R> {
     pub fn new(context: R, cfg: ApplicationConfig) -> (Self, Mailbox, Supervisor) {
         let (tx, rx) = mpsc::channel(cfg.mailbox_size);
+
+        let genesis_hash = Block::genesis_hash();
+        let forkchoice = ForkchoiceState {
+            head_block_hash: genesis_hash.into(),
+            safe_block_hash: genesis_hash.into(),
+            finalized_block_hash: genesis_hash.into(),
+        };
         (
             Self {
                 context,
                 mailbox: rx,
                 engine_client: EngineClient::new(cfg.engine_url, &cfg.engine_jwt), // todo: why are these types dif?
-                forkchoice: ForkchoiceState::default(),
+                forkchoice,
                 built_block: None,
             },
             Mailbox::new(tx),
@@ -72,30 +76,23 @@ impl<R: Rng + Spawner + Metrics + Clock> Actor<R> {
         )
     }
 
-    pub fn start(
-        mut self,
-        syncer: seismicbft_syncer::Mailbox,
-        buffer: buffered::Mailbox<PublicKey, Block>,
-    ) -> Handle<()> {
-        self.context.spawn_ref()(self.run(syncer, buffer))
+    pub fn start(mut self, syncer: seismicbft_syncer::Mailbox) -> Handle<()> {
+        self.context.spawn_ref()(self.run(syncer))
     }
 
-    pub async fn run(
-        mut self,
-        mut syncer: SyncerMailbox,
-        mut buffer: buffered::Mailbox<PublicKey, Block>,
-    ) {
+    pub async fn run(mut self, mut syncer: SyncerMailbox) {
         while let Some(message) = self.mailbox.next().await {
             match message {
                 Message::Genesis { response } => {
-                    // todo
-                    let _ = response.send([0; 32].into());
+                    info!("Handling message Genesis");
+                    let _ = response.send(Block::genesis_hash().into());
                 }
                 Message::Propose {
                     view,
                     parent,
                     mut response,
                 } => {
+                    info!("Handling message Propose view: {}", view);
                     tokio::select! {
                         res = self.handle_proposal(view, parent, &mut syncer) => {
                             match res {
@@ -108,7 +105,7 @@ impl<R: Rng + Spawner + Metrics + Clock> Actor<R> {
                                     // respond to simplex with the digest. Simplex will then ask syncer to broadcast
                                     let _ = response.send(block_digest);
                                 }
-                                Err(e) => warn!("Failed to generate a proposal for view {view} : {e}")
+                                Err(e) => warn!("Failed to generate a proposal for view1 {view} : {e}")
                             }
 
                         }
@@ -119,11 +116,11 @@ impl<R: Rng + Spawner + Metrics + Clock> Actor<R> {
                     }
                 }
                 Message::Broadcast { payload } => {
+                    info!("Handling message Broadcast");
                     let Some(built_block) = self.built_block.clone() else {
                         warn!("Asked to broadcast a block with no built block");
                         continue;
                     };
-
                     // todo(dalton): This should be a hard assert but for testing im just going to log
                     if payload != built_block.digest {
                         error!(
@@ -131,8 +128,10 @@ impl<R: Rng + Spawner + Metrics + Clock> Actor<R> {
                         );
                     }
 
-                    let ack = buffer.broadcast(Recipients::All, built_block).await;
-                    drop(ack);
+                    syncer.broadcast(built_block).await;
+                    // let ack = buffer.broadcast(Recipients::All, built_block).await;
+
+                    // drop(ack);
                 }
 
                 Message::Verify {
@@ -141,6 +140,7 @@ impl<R: Rng + Spawner + Metrics + Clock> Actor<R> {
                     payload,
                     mut response,
                 } => {
+                    info!("Handling message Verify view: {}", view);
                     tokio::select!(
                         res = self.handle_verify(view, parent, payload, &mut syncer) => {
                             match res {
@@ -164,6 +164,7 @@ impl<R: Rng + Spawner + Metrics + Clock> Actor<R> {
                     parent,
                     payload,
                 } => {
+                    info!("Handling message Finalize view: {}", view);
                     if let Err(e) = self
                         .handle_finalize(view, parent, payload, &mut syncer)
                         .await
@@ -184,19 +185,19 @@ impl<R: Rng + Spawner + Metrics + Clock> Actor<R> {
         parent: (u64, Digest),
         syncer: &mut SyncerMailbox,
     ) -> Result<Block> {
-        // Get parent block
-        let parent_block = syncer.get(Some(parent.0), parent.1).await.await?;
-
         let now = SystemTime::now();
-
         let mut timestamp = now.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
 
-        if timestamp <= parent_block.timestamp {
-            timestamp = parent_block.timestamp + 1;
+        if parent.1 != Block::genesis_hash().into() {
+            // Get parent block
+            let parent_block = syncer.get(Some(parent.0), parent.1).await.await?;
+
+            if timestamp <= parent_block.timestamp {
+                timestamp = parent_block.timestamp + 1;
+            }
+
+            self.forkchoice.head_block_hash = parent_block.eth_block_hash().into();
         }
-
-        self.forkchoice.head_block_hash = parent_block.eth_block_hash().into();
-
         let payload_id = self
             .engine_client
             .start_building_block(self.forkchoice, timestamp)
@@ -225,24 +226,30 @@ impl<R: Rng + Spawner + Metrics + Clock> Actor<R> {
         payload: Digest,
         syncer: &mut SyncerMailbox,
     ) -> Result<bool> {
-        let parent_block_fut = syncer.get(Some(parent.0), parent.1).await;
-        let block_fut = syncer.get(None, payload).await;
-
-        let (parent, block) = try_join(parent_block_fut, block_fut)
+        let block = syncer
+            .get(None, payload)
             .await
-            .context("Unable to get block and parent from syncer to verify")?;
+            .await
+            .context("unable to get block from syncer")?;
+        if parent.1 != Block::genesis_hash().into() {
+            let parent_block_fut = syncer.get(Some(parent.0), parent.1).await;
 
-        if block.eth_parent_hash() != parent.eth_block_hash() {
-            return Ok(false);
-        }
-        if block.parent != parent.digest {
-            return Ok(false);
-        }
-        if block.height != parent.height + 1 {
-            return Ok(false);
-        }
-        if block.timestamp <= parent.timestamp {
-            return Ok(false);
+            let parent = parent_block_fut
+                .await
+                .context("Unable to get parent from syncer to verify")?;
+
+            if block.eth_parent_hash() != parent.eth_block_hash() {
+                return Ok(false);
+            }
+            if block.parent != parent.digest {
+                return Ok(false);
+            }
+            if block.height != parent.height + 1 {
+                return Ok(false);
+            }
+            if block.timestamp <= parent.timestamp {
+                return Ok(false);
+            }
         }
         // todo(dalton): We should have a check that this new block isnt from too far into the future. With some allowed varience
 
