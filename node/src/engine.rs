@@ -3,10 +3,11 @@ use commonware_consensus::simplex::{self, Engine as Simplex};
 use commonware_cryptography::Signer as _;
 use commonware_p2p::{Receiver, Sender};
 use commonware_runtime::{Clock, Handle, Metrics, Spawner, Storage};
-use futures::future::try_join_all;
+use futures::{channel::mpsc, future::try_join_all};
 use governor::clock::Clock as GClock;
 use rand::{CryptoRng, Rng};
 use seismicbft_application::ApplicationConfig;
+use seismicbft_syncer::Orchestrator;
 use seismicbft_types::{Block, Digest, NAMESPACE, PrivateKey, PublicKey};
 use tracing::{error, warn};
 
@@ -25,6 +26,7 @@ pub struct Engine<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metr
     buffer: buffered::Engine<E, PublicKey, Block>,
     buffer_mailbox: buffered::Mailbox<PublicKey, Block>,
     syncer: seismicbft_syncer::Actor<E>,
+    orchestrator: Orchestrator,
     syncer_mailbox: seismicbft_syncer::Mailbox,
     simplex: Simplex<
         E,
@@ -32,7 +34,7 @@ pub struct Engine<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metr
         Digest,
         seismicbft_application::Mailbox,
         seismicbft_application::Mailbox,
-        seismicbft_application::Mailbox,
+        seismicbft_syncer::Mailbox,
         seismicbft_application::Supervisor,
     >,
 }
@@ -47,8 +49,10 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
                 mailbox_size: cfg.mailbox_size,
                 engine_url: cfg.engine_url,
                 engine_jwt: cfg.engine_jwt,
+                partition_prefix: cfg.partition_prefix.clone(),
             },
-        );
+        )
+        .await;
 
         // create the buffer
         let (buffer, buffer_mailbox) = buffered::Engine::new(
@@ -71,7 +75,7 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
             backfill_quota: cfg.backfill_quota,
             activity_timeout: cfg.activity_timeout,
         };
-        let (syncer, syncer_mailbox) =
+        let (syncer, syncer_mailbox, orchestrator) =
             seismicbft_syncer::Actor::new(context.with_label("syncer"), syncer_config).await;
 
         // create simplex
@@ -81,7 +85,7 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
                 crypto: cfg.signer,
                 automaton: application_mailbox.clone(),
                 relay: application_mailbox.clone(),
-                reporter: application_mailbox.clone(),
+                reporter: syncer_mailbox.clone(),
                 supervisor,
                 partition: format!("{}-seismicbft", cfg.partition_prefix),
                 compression: None,
@@ -110,6 +114,7 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
             buffer_mailbox,
             syncer,
             syncer_mailbox,
+            orchestrator,
             simplex,
         }
     }
@@ -168,12 +173,18 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
             impl Receiver<PublicKey = PublicKey>,
         ),
     ) {
+        let finalizer_network = mpsc::channel::<()>(1);
+        let tx_finalizer = finalizer_network.0.clone();
         // start the application
-        let app_handle = self.application.start(self.syncer_mailbox);
+        let app_handle =
+            self.application
+                .start(self.syncer_mailbox, self.orchestrator, finalizer_network);
         // start the buffer
         let buffer_handle = self.buffer.start(broadcast_network);
         // start the syncer
-        let syncer_handle = self.syncer.start(self.buffer_mailbox, backfill_network);
+        let syncer_handle = self
+            .syncer
+            .start(self.buffer_mailbox, backfill_network, tx_finalizer);
         // start simplex
         let simplex_handle = self.simplex.start(voter_network, resolver_network);
 

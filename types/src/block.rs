@@ -1,5 +1,6 @@
 use std::ops::Deref as _;
 
+use alloy_consensus::{Block as AlloyBlock, TxEnvelope};
 use alloy_primitives::{Bytes as AlloyBytes, U256};
 use alloy_rpc_types_engine::ExecutionPayloadV3;
 use bytes::{Buf, BufMut};
@@ -33,7 +34,11 @@ pub struct Block {
 
 impl Block {
     pub fn eth_block_hash(&self) -> [u8; 32] {
-        self.payload.payload_inner.payload_inner.block_hash.into()
+        if self.height == 0 {
+            GENESIS_HASH
+        } else {
+            self.payload.payload_inner.payload_inner.block_hash.into()
+        }
     }
 
     pub fn eth_parent_hash(&self) -> [u8; 32] {
@@ -70,6 +75,18 @@ impl Block {
 
     pub fn genesis_hash() -> [u8; 32] {
         GENESIS_HASH
+    }
+
+    pub fn genesis() -> Self {
+        Self {
+            execution_requests: Default::default(),
+            digest: GENESIS_HASH.into(),
+            parent: GENESIS_HASH.into(),
+            height: 0,
+            timestamp: 0,
+            payload: ExecutionPayloadV3::from_block_slow(&AlloyBlock::<TxEnvelope>::default()),
+            block_value: U256::ZERO,
+        }
     }
 }
 
@@ -280,6 +297,38 @@ impl EncodeSize for Finalized {
     }
 }
 
+// The reason for this struct is because we want to store it without the block, and finalization only implements Read<Cfg=usize> and we need it to implement Read<Cfg=()> for the archive trait
+pub struct FinalizationArchive {
+    pub finalization: Finalization<Signature, Digest>,
+}
+
+impl FinalizationArchive {
+    pub fn new(finalization: Finalization<Signature, Digest>) -> Self {
+        Self { finalization }
+    }
+}
+
+impl Write for FinalizationArchive {
+    fn write(&self, buf: &mut impl BufMut) {
+        self.finalization.write(buf);
+    }
+}
+
+impl Read for FinalizationArchive {
+    type Cfg = ();
+
+    fn read_cfg(buf: &mut impl Buf, _: &Self::Cfg) -> Result<Self, Error> {
+        let finalization = Finalization::<Signature, Digest>::read_cfg(buf, &buf.remaining())?;
+
+        Ok(Self { finalization })
+    }
+}
+
+impl EncodeSize for FinalizationArchive {
+    fn encode_size(&self) -> usize {
+        self.finalization.encode_size()
+    }
+}
 #[cfg(test)]
 mod test {
     use super::*;

@@ -8,17 +8,20 @@ seismicbft-syncer.workspace = true
 seismicbft-types.workspace = true
 
 anyhow.workspace = true
-tokio.workspace = true
 tracing.workspace = true
 commonware-consensus.workspace = true
 commonware-cryptography.workspace = true
 commonware-runtime.workspace = true
+commonware-macros.workspace = true
+commonware-utils.workspace = true
+commonware-storage.workspace = true
 
 futures.workspace = true
 alloy-provider.workspace = true
 alloy-rpc-types-engine.workspace = true
 alloy-transport-http.workspace = true
 alloy-rpc-client.workspace = true
+governor.workspace = true
 tower.workspace = true
 rand.workspace = true
 

@@ -13,4 +13,6 @@ pub struct ApplicationConfig {
 
     /// Shared jwt auth key for Seismic Reth engine api
     pub engine_jwt: String,
+
+    pub partition_prefix: String,
 }

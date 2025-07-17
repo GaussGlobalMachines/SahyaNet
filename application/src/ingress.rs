@@ -1,6 +1,5 @@
-use crate::Activity;
 use commonware_consensus::{
-    Automaton, Relay, Reporter,
+    Automaton, Relay,
     simplex::types::{Context, View},
 };
 use commonware_cryptography::sha256::Digest;
@@ -8,7 +7,6 @@ use futures::{
     SinkExt,
     channel::{mpsc, oneshot},
 };
-use tracing::debug;
 
 pub enum Message {
     Genesis {
@@ -27,11 +25,6 @@ pub enum Message {
         parent: (View, Digest),
         payload: Digest,
         response: oneshot::Sender<bool>,
-    },
-    Finalize {
-        view: View,
-        parent: View,
-        payload: Digest,
     },
 }
 
@@ -92,78 +85,6 @@ impl Automaton for Mailbox {
             .await
             .expect("Failed to send verify");
         receiver
-    }
-}
-
-impl Reporter for Mailbox {
-    type Activity = Activity;
-
-    async fn report(&mut self, activity: Self::Activity) {
-        // leaving all possible activity branches just for now. I think the only one we need to care about is finalization
-        // we possibly might need to care about notarization but I will need to look into simplex a bit more to know for sure
-        match activity {
-            Activity::Notarize(notarize) => {
-                // When a single node notarizes a proposal
-                debug!("Notarize Activity for view {}", notarize.proposal.view);
-            }
-            Activity::Notarization(notarization) => {
-                // when a quorum of nodes nortarized a proposal
-                debug!(
-                    "Notarization Activity for view {}",
-                    notarization.proposal.view
-                );
-            }
-            Activity::Nullify(nullify) => {
-                // single node votes to skip a view
-                debug!("Nullify Activity for view {}", nullify.view);
-            }
-            Activity::Nullification(nullification) => {
-                // a quorum of nodes vote to skip a view
-                debug!("Nullification Activity for view {}", nullification.view);
-            }
-            Activity::Finalize(finalize) => {
-                // a single validator finalizes a proposal
-                debug!("Finalize Activity for view {}", finalize.proposal.view);
-            }
-            Activity::Finalization(finalization) => {
-                // a quorum of validators finalize a proposal
-                debug!(
-                    "Finalization Activity for view {}",
-                    finalization.proposal.view
-                );
-
-                // Simplex checks the signature before here so we shouldnt have to
-                let _ = self
-                    .sender
-                    .send(Message::Finalize {
-                        view: finalization.proposal.view,
-                        parent: finalization.proposal.parent,
-                        payload: finalization.proposal.payload,
-                    })
-                    .await;
-            }
-            Activity::ConflictingNotarize(conflicting_notarize) => {
-                // Evidence byzantine behavior
-                debug!(
-                    "Conflicting Notarize Activity for view {}",
-                    conflicting_notarize.view
-                );
-            }
-            Activity::ConflictingFinalize(conflicting_finalize) => {
-                // evidence of byzantine behavior
-                debug!(
-                    "Conflicting Finalize Activity for view {}",
-                    conflicting_finalize.view
-                );
-            }
-            Activity::NullifyFinalize(nullify_finalize) => {
-                // evidence of byzantine behavior
-                debug!(
-                    "Nullify Finalize Activity for view {}",
-                    nullify_finalize.proposal.view
-                );
-            }
-        }
     }
 }
 

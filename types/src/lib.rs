@@ -13,7 +13,7 @@ pub type Activity = CActivity<commonware_cryptography::bls12381::Signature, Dige
 
 pub type PublicKey = commonware_cryptography::bls12381::PublicKey;
 pub type PrivateKey = commonware_cryptography::bls12381::PrivateKey;
-
+pub type Signature = commonware_cryptography::bls12381::Signature;
 pub const NAMESPACE: &[u8] = b"_SEISMIC_BFT";
 
 // temporary until we have true genesis file
@@ -64,8 +64,6 @@ impl GenesisCommittee {
 
 #[test]
 fn test_loading_committee() {
-    let path = PathBuf::from("test_committee.toml");
-
     GenesisCommittee::load_from_file(PathBuf::from("test_committee.toml"));
 }
 
