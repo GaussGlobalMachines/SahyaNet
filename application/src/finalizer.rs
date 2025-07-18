@@ -15,6 +15,8 @@ use futures::{
 use rand::Rng;
 use seismicbft_syncer::Orchestrator;
 use tracing::{debug, info};
+#[cfg(feature = "prom")]
+use metrics::counter;
 
 use crate::engine_client::EngineClient;
 
@@ -101,6 +103,12 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Fina
                             safe_block_hash: eth_hash.into(),
                             finalized_block_hash: eth_hash.into(),
                         };
+
+                        #[cfg(feature = "prom")]
+                        {
+                            let num_tx = block.payload.payload_inner.payload_inner.transactions.len();
+                            counter!("tx_committed_total").increment(num_tx as u64);
+                        }
 
                         self.engine_client.commit_hash(forkchoice).await;
 

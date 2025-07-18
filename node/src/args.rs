@@ -136,7 +136,7 @@ impl Command {
                     // todo: dont know what this does
                     json: false,
                 },
-                Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 6969)),
+                Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6969)),
                 None,
             );
 
