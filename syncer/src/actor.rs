@@ -9,7 +9,7 @@ use crate::{
 };
 use commonware_broadcast::{Broadcaster as _, buffered};
 use commonware_codec::{DecodeExt as _, Encode as _};
-use commonware_consensus::simplex::types::Viewable as _;
+use commonware_consensus::simplex::types::{Finalization, Viewable as _};
 use commonware_macros::select;
 use commonware_p2p::{Receiver, Recipients, Sender, utils::requester};
 use commonware_resolver::{Resolver as _, p2p};
@@ -21,9 +21,7 @@ use commonware_storage::{
 use futures::{StreamExt as _, channel::mpsc};
 use governor::Quota;
 use rand::Rng;
-use seismicbft_types::{
-    Block, Digest, FinalizationArchive, Finalized, NAMESPACE, Notarized, PublicKey,
-};
+use seismicbft_types::{Block, Digest, Finalized, NAMESPACE, Notarized, PublicKey, Signature};
 use tracing::{debug, warn};
 
 const REPLAY_BUFFER: usize = 8 * 1024 * 1024;
@@ -40,7 +38,7 @@ pub struct Actor<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock
     notarized: Archive<TwoCap, R, Digest, Notarized>,
 
     // Finalizations stored by height
-    finalized: Archive<EightCap, R, Digest, FinalizationArchive>,
+    finalized: Archive<EightCap, R, Digest, Finalization<Signature, Digest>>,
     // Blocks finalized stored by height
     //
     // We store this separately because we may not have the finalization for a block
@@ -102,7 +100,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
                 pending_writes: 0,
                 replay_concurrency: REPLAY_CONCURRENCY,
                 compression: None,
-                codec_config: (),
+                codec_config: usize::MAX,
                 replay_buffer: REPLAY_BUFFER,
                 write_buffer: WRITE_BUFFER,
             },
@@ -314,7 +312,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
                             let height = block.height;
 
                             // persist the finalization
-                            self.finalized.put(height, digest, FinalizationArchive { finalization }).await.expect("Failed to insert into finalization store");
+                            self.finalized.put(height, digest, finalization).await.expect("Failed to insert into finalization store");
                             self.blocks.put(height, digest,block).await.expect("failed to insert into block store");
 
                             // prune blocks
@@ -389,7 +387,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
                             // If finalization exists, mark as last_view_processed
                             let finalization = self.finalized.get(Identifier::Index(next)).await.expect("Failed to get finalized block");
                             if let Some(finalization) = finalization {
-                                last_view_processed = finalization.finalization.view();
+                                last_view_processed = finalization.view();
                             }
 
                             // Drain requested blocks less than next
@@ -513,7 +511,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
 
                                     // Persist the finalization
                                     self.finalized
-                                        .put(height, finalization.block.digest, FinalizationArchive { finalization: finalization.proof })
+                                        .put(height, finalization.block.digest, finalization.proof )
                                         .await
                                         .expect("Failed to insert finalization");
 
@@ -573,7 +571,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
                                     };
 
                                     // send finalization
-                                    let payload = Finalized::new(finalization.finalization, block);
+                                    let payload = Finalized::new(finalization, block);
                                     let _ = response.send(payload.encode().into());
                                 }
                                 Value::Digest(digest) => {

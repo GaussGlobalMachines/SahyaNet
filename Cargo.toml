@@ -16,12 +16,12 @@ anyhow = "1.0.98"
 bytes = "1.10.1"
 #commonware-consensus = {path = "../commonware/consensus"}
 #commonware-cryptography = {path = "../commonware/cryptography"}
-#ommonware-storage = {path = "../commonware/storage"}
-#ommonware-runtime = {path = "../commonware/runtime"}
+#commonware-storage = {path = "../commonware/storage"}
+#commonware-runtime = {path = "../commonware/runtime"}
 #commonware-codec = {path = "../commonware/codec"}
 #commonware-p2p = {path = "../commonware/p2p"}
 #commonware-broadcast = {path = "../commonware/broadcast"}
-#ommonware-utils = {path = "../commonware/utils"}
+#commonware-utils = {path = "../commonware/utils"}
 #commonware-resolver = {path = "../commonware/resolver"}
 #commonware-macros = {path = "../commonware/macros"}
 

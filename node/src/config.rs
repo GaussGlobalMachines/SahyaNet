@@ -12,12 +12,12 @@ pub const RESOLVER_CHANNEL: u32 = 1;
 pub const BROADCASTER_CHANNEL: u32 = 2;
 pub const BACKFILLER_CHANNEL: u32 = 3;
 
-const LEADER_TIMEOUT: Duration = Duration::from_secs(1);
-const NOTARIZATION_TIMEOUT: Duration = Duration::from_secs(2);
+const LEADER_TIMEOUT: Duration = Duration::from_secs(5);
+const NOTARIZATION_TIMEOUT: Duration = Duration::from_secs(10);
 const NULLIFY_RETRY: Duration = Duration::from_secs(10);
 const ACTIVITY_TIMEOUT: u64 = 256;
 const SKIP_TIMEOUT: u64 = 32;
-const FETCH_TIMEOUT: Duration = Duration::from_secs(2);
+const FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 const FETCH_CONCURRENT: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
 const MAX_FETCH_COUNT: usize = 16;
@@ -57,6 +57,7 @@ impl EngineConfig {
         engine_jwt_path: String,
         key_path: String,
         participants: Vec<PublicKey>,
+        db_prefix: String,
     ) -> Result<Self> {
         // read JWT from file
         let jwt_path = get_expanded_path(&engine_jwt_path)?;
@@ -67,7 +68,7 @@ impl EngineConfig {
 
         // read a genesis of initial participants from file
         Ok(Self {
-            partition_prefix: "engine".to_string(),
+            partition_prefix: db_prefix,
             signer,
             participants,
             mailbox_size: MAILBOX_SIZE,

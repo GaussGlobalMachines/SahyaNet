@@ -83,6 +83,11 @@ pub struct Flags {
         default_value_t = String::from("debug")
     )]
     pub log_level: String,
+    #[arg(
+        long,
+        default_value_t = String::from("quartz")
+    )]
+    pub db_prefix: String,
 }
 
 impl Command {
@@ -105,6 +110,7 @@ impl Command {
             flags.engine_jwt_path.clone(),
             flags.key_path.clone(),
             peers.clone(),
+            flags.db_prefix.clone(),
         )
         .unwrap();
 
@@ -210,6 +216,7 @@ pub fn run_node_with_runtime(
         flags.engine_jwt_path.clone(),
         flags.key_path.clone(),
         peers.clone(),
+        flags.db_prefix.clone(),
     )
     .unwrap();
 

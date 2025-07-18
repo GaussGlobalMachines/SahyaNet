@@ -1,5 +1,6 @@
 use seismicbft_types::PublicKey;
 
+#[derive(Clone)]
 pub struct ApplicationConfig {
     /// Participants active in consensus.
     pub participants: Vec<PublicKey>,
