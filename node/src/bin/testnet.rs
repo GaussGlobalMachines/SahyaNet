@@ -151,6 +151,7 @@ fn get_node_flags(node: usize) -> Flags {
         engine_port: 8551,
         engine_jwt_path: "testnet/jwt.hex".into(),
         port: (26600 + (node * 10)) as u16,
+        prom_port: (28600 + (node * 10)) as u16,
         worker_threads: 2,
         log_level: "info".into(),
         db_prefix: format!("{node}-quarts"),

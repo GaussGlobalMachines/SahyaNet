@@ -74,6 +74,10 @@ pub struct Flags {
     #[arg(long, default_value_t = 8551)]
     pub port: u16,
 
+    /// Port Consensus runs on
+    #[arg(long, default_value_t = 9090)]
+    pub prom_port: u16,
+
     #[arg(long, default_value_t = 4)]
     pub worker_threads: usize,
 
@@ -136,7 +140,7 @@ impl Command {
                     // todo: dont know what this does
                     json: false,
                 },
-                Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6969)),
+                Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), flags.prom_port)),
                 None,
             );
 
