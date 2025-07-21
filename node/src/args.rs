@@ -22,6 +22,7 @@ use crate::{
     },
     engine::Engine,
     keys::KeySubCmd,
+    utils::get_expanded_path,
 };
 
 //use crate::keys::KeySubCmd;
@@ -122,11 +123,13 @@ impl Command {
             .ip_of(&config.signer.public_key())
             .expect("This node is not on the committee");
 
+        let store_path = get_expanded_path(&flags.store_path).expect("Invalid store path");
+
         // Initialize runtime
         let cfg = tokio::Config::default()
             .with_tcp_nodelay(Some(true))
             .with_worker_threads(flags.worker_threads)
-            .with_storage_directory(PathBuf::from(&flags.store_path))
+            .with_storage_directory(store_path)
             .with_catch_panics(false);
         let executor = tokio::Runner::new(cfg);
 
