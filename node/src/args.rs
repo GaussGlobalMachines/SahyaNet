@@ -1,7 +1,6 @@
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     num::NonZeroU32,
-    path::PathBuf,
     str::FromStr as _,
 };
 
@@ -9,7 +8,6 @@ use clap::{Args, Parser, Subcommand};
 use commonware_cryptography::Signer;
 use commonware_p2p::authenticated;
 use commonware_runtime::{Handle, Metrics as _, Runner, Spawner as _, tokio};
-use commonware_utils::union_unique;
 use futures::future::try_join_all;
 use governor::Quota;
 use seismicbft_types::{GenesisCommittee, NAMESPACE, PublicKey};
@@ -108,7 +106,8 @@ impl Command {
         let committee = GenesisCommittee::load_from_file("test_committee.toml".into());
 
         let engine_url = format!("http://0.0.0.0:{}", flags.engine_port);
-        let peers: Vec<PublicKey> = committee.validators.iter().map(|v| v.0.clone()).collect();
+        let mut peers: Vec<PublicKey> = committee.validators.iter().map(|v| v.0.clone()).collect();
+        peers.sort();
 
         let config = EngineConfig::get_engine_config(
             engine_url,
@@ -143,16 +142,18 @@ impl Command {
                     // todo: dont know what this does
                     json: false,
                 },
-                Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), flags.prom_port)),
+                Some(SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                    flags.prom_port,
+                )),
                 None,
             );
 
             // configure network
-            let p2p_namespace = union_unique(NAMESPACE, b"_P2P");
 
             let mut p2p_cfg = authenticated::Config::aggressive(
                 config.signer.clone(),
-                &p2p_namespace,
+                NAMESPACE,
                 SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), flags.port),
                 our_ip,
                 committee.validators,
@@ -233,11 +234,10 @@ pub fn run_node_with_runtime(
 
     context.spawn(async move |context| {
         // configure network
-        let p2p_namespace = union_unique(NAMESPACE, b"_P2P");
 
         let mut p2p_cfg = authenticated::Config::aggressive(
             config.signer.clone(),
-            &p2p_namespace,
+            NAMESPACE,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), flags.port),
             our_ip,
             committee.validators,
