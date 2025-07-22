@@ -16,7 +16,7 @@ use rand::Rng;
 use seismicbft_syncer::Orchestrator;
 use tracing::{debug, info};
 #[cfg(feature = "prom")]
-use metrics::counter;
+use metrics::{counter, histogram};
 
 use crate::engine_client::EngineClient;
 
@@ -86,6 +86,8 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Fina
         self.context.spawn(move |_| async move {
             // check if the orchestrator has our next block
             let latest_key = FixedBytes::new(LATEST_KEY);
+            #[cfg(feature = "prom")]
+            let mut last_committed_timestamp: Option<std::time::Instant> = None;
             loop {
                 // Check if the next block is available
                 let next = self.last_indexed + 1;
@@ -108,6 +110,12 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Fina
                         {
                             let num_tx = block.payload.payload_inner.payload_inner.transactions.len();
                             counter!("tx_committed_total").increment(num_tx as u64);
+                            counter!("blocks_committed_total").increment(1);
+                            if let Some(last_committed) = last_committed_timestamp {
+                                let block_delta = last_committed.elapsed().as_millis() as f64;
+                                histogram!("block_time_millis").record(block_delta);
+                            }
+                            last_committed_timestamp = Some(std::time::Instant::now());
                         }
 
                         self.engine_client.commit_hash(forkchoice).await;
