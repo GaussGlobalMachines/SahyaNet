@@ -144,10 +144,26 @@ impl Command {
                 },
                 Some(SocketAddr::new(
                     IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-                    flags.prom_port,
+                    flags.prom_port + 1,
                 )),
                 None,
             );
+
+            // Start prometheus endpoint
+            #[cfg(feature = "prom")]
+            {
+                use crate::prom::hooks::Hooks;
+                use crate::prom::server::{MetricServer, MetricServerConfig};
+                use std::net::SocketAddr;
+
+                let hooks = Hooks::builder().build();
+
+                let listen_addr = format!("0.0.0.0:{}", flags.prom_port)
+                    .parse::<SocketAddr>()
+                    .unwrap();
+                let config = MetricServerConfig::new(listen_addr, hooks);
+                MetricServer::new(config).serve().await.unwrap();
+            }
 
             // configure network
 
