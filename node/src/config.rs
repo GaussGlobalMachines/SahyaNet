@@ -38,7 +38,7 @@ pub struct EngineConfig {
     pub activity_timeout: u64,
     pub skip_timeout: u64,
     pub max_fetch_count: usize,
-    pub max_fetch_size: usize,
+    pub _max_fetch_size: usize,
     pub fetch_concurrent: usize,
     pub fetch_rate_per_peer: Quota,
 
@@ -79,7 +79,7 @@ impl EngineConfig {
             activity_timeout: genesis.activity_timeout_views,
             skip_timeout: genesis.skip_timeout_views,
             max_fetch_count: MAX_FETCH_COUNT,
-            max_fetch_size: MAX_FETCH_SIZE,
+            _max_fetch_size: MAX_FETCH_SIZE,
             fetch_concurrent: FETCH_CONCURRENT,
             fetch_rate_per_peer: Quota::per_second(NonZeroU32::new(FETCH_RATE_P2P).unwrap()),
             engine_url,

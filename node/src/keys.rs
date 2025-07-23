@@ -26,7 +26,6 @@ impl KeySubCmd {
 
     fn generate_keys(&self, flags: &Flags) {
         // todo(dalton): Add key overwrite safety. Currently if there is already key this function will overwrite it with a new one
-
         let path = get_expanded_path(&flags.key_path).expect("invalid path");
         std::fs::create_dir_all(path.parent().expect("Invalide file path"))
             .expect("Unable to create file path to generate key");
