@@ -8,7 +8,7 @@ use governor::clock::Clock as GClock;
 use rand::{CryptoRng, Rng};
 use seismicbft_application::ApplicationConfig;
 use seismicbft_syncer::Orchestrator;
-use seismicbft_types::{Block, Digest, NAMESPACE, PrivateKey, PublicKey};
+use seismicbft_types::{Block, Digest, PrivateKey, PublicKey};
 use tracing::{error, warn};
 
 use crate::config::EngineConfig;
@@ -50,6 +50,7 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
                 engine_url: cfg.engine_url,
                 engine_jwt: cfg.engine_jwt,
                 partition_prefix: cfg.partition_prefix.clone(),
+                genesis_hash: cfg.genesis_hash,
             },
         )
         .await;
@@ -74,6 +75,7 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
             mailbox_size: cfg.mailbox_size,
             backfill_quota: cfg.backfill_quota,
             activity_timeout: cfg.activity_timeout,
+            namespace: cfg.namespace.clone(),
         };
         let (syncer, syncer_mailbox, orchestrator) =
             seismicbft_syncer::Actor::new(context.with_label("syncer"), syncer_config).await;
@@ -90,7 +92,7 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
                 partition: format!("{}-seismicbft", cfg.partition_prefix),
                 compression: None,
                 mailbox_size: cfg.mailbox_size,
-                namespace: NAMESPACE.to_vec(),
+                namespace: cfg.namespace.clone().as_bytes().to_vec(),
                 replay_concurrency: 1,
                 replay_buffer: REPLAY_BUFFER,
                 write_buffer: WRITE_BUFFER,

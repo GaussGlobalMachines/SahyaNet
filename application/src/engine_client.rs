@@ -99,7 +99,7 @@ impl EngineClient {
             // todo(dalton): this should be the validators public key
             suggested_fee_recipient: [1; 20].into(),
             withdrawals: Some(Vec::new()),
-            // todo(dalton): we should make this something that we can associate with the cometBFT height
+            // todo(dalton): we should make this something that we can associate with the simplex height
             parent_beacon_block_root: Some([1; 32].into()),
         };
         let res = self

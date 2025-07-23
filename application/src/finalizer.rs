@@ -12,11 +12,11 @@ use futures::{
     StreamExt,
     channel::{mpsc, oneshot},
 };
+#[cfg(feature = "prom")]
+use metrics::{counter, histogram};
 use rand::Rng;
 use seismicbft_syncer::Orchestrator;
 use tracing::{debug, info};
-#[cfg(feature = "prom")]
-use metrics::{counter, histogram};
 
 use crate::engine_client::EngineClient;
 
@@ -71,7 +71,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Fina
         (
             Self {
                 context,
-                last_indexed: last_indexed,
+                last_indexed,
                 height_notifier: HeightNotifier::new(),
                 metadata,
                 height_notify_mailbox,
@@ -108,7 +108,8 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Fina
 
                         #[cfg(feature = "prom")]
                         {
-                            let num_tx = block.payload.payload_inner.payload_inner.transactions.len();
+                            let num_tx =
+                                block.payload.payload_inner.payload_inner.transactions.len();
                             counter!("tx_committed_total").increment(num_tx as u64);
                             counter!("blocks_committed_total").increment(1);
                             if let Some(last_committed) = last_committed_timestamp {

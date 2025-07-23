@@ -10,13 +10,13 @@ use commonware_p2p::authenticated;
 use commonware_runtime::{Handle, Metrics as _, Runner, Spawner as _, tokio};
 use futures::future::try_join_all;
 use governor::Quota;
-use seismicbft_types::{GenesisCommittee, NAMESPACE, PublicKey};
+use seismicbft_types::{Genesis, PublicKey};
 use tracing::{Level, error};
 
 use crate::{
     config::{
-        BACKFILLER_CHANNEL, BROADCASTER_CHANNEL, EngineConfig, MAX_MESSAGE_SIZE, MESSAGE_BACKLOG,
-        RESOLVER_CHANNEL, VOTER_CHANNEL,
+        BACKFILLER_CHANNEL, BROADCASTER_CHANNEL, EngineConfig, MESSAGE_BACKLOG, RESOLVER_CHANNEL,
+        VOTER_CHANNEL,
     },
     engine::Engine,
     keys::KeySubCmd,
@@ -91,6 +91,12 @@ pub struct Flags {
         default_value_t = String::from("quartz")
     )]
     pub db_prefix: String,
+    /// Path to the genesis file
+    #[arg(
+        long,
+        default_value_t = String::from("./example_genesis.toml")
+    )]
+    pub genesis_path: String,
 }
 
 impl Command {
@@ -102,11 +108,17 @@ impl Command {
     }
 
     pub fn run_node(&self, flags: &Flags) {
-        // todo(dalton): Handle committee needs to be standaridized and handles through flags
-        let committee = GenesisCommittee::load_from_file("test_committee.toml".into());
+        let genesis =
+            Genesis::load_from_file(&flags.genesis_path).expect("Can not find genesis file");
+
+        let committee: Vec<(PublicKey, SocketAddr)> = genesis
+            .validators
+            .iter()
+            .map(|v| v.try_into().expect("Invalid validator in genesis"))
+            .collect();
 
         let engine_url = format!("http://0.0.0.0:{}", flags.engine_port);
-        let mut peers: Vec<PublicKey> = committee.validators.iter().map(|v| v.0.clone()).collect();
+        let mut peers: Vec<PublicKey> = committee.iter().map(|v| v.0.clone()).collect();
         peers.sort();
 
         let config = EngineConfig::get_engine_config(
@@ -115,11 +127,19 @@ impl Command {
             flags.key_path.clone(),
             peers.clone(),
             flags.db_prefix.clone(),
+            &genesis,
         )
         .unwrap();
 
         let our_ip = committee
-            .ip_of(&config.signer.public_key())
+            .iter()
+            .find_map(|v| {
+                if v.0 == config.signer.public_key() {
+                    Some(v.1)
+                } else {
+                    None
+                }
+            })
             .expect("This node is not on the committee");
 
         let store_path = get_expanded_path(&flags.store_path).expect("Invalid store path");
@@ -169,11 +189,11 @@ impl Command {
 
             let mut p2p_cfg = authenticated::Config::aggressive(
                 config.signer.clone(),
-                NAMESPACE,
+                genesis.namespace.as_bytes(),
                 SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), flags.port),
                 our_ip,
-                committee.validators,
-                MAX_MESSAGE_SIZE,
+                committee,
+                genesis.max_message_size_bytes as usize,
             );
             p2p_cfg.mailbox_size = config.mailbox_size;
 
@@ -229,11 +249,17 @@ pub fn run_node_with_runtime(
     context: commonware_runtime::tokio::Context,
     flags: Flags,
 ) -> Handle<()> {
-    // todo(dalton): Handle committee needs to be standaridized and handles through flags
-    let committee = GenesisCommittee::load_from_file("test_committee.toml".into());
+    let genesis = Genesis::load_from_file(&flags.genesis_path).expect("Can not find genesis file");
+
+    let committee: Vec<(PublicKey, SocketAddr)> = genesis
+        .validators
+        .iter()
+        .map(|v| v.try_into().expect("Invalid validator in genesis"))
+        .collect();
 
     let engine_url = format!("http://0.0.0.0:{}", flags.engine_port);
-    let peers: Vec<PublicKey> = committee.validators.iter().map(|v| v.0.clone()).collect();
+    let mut peers: Vec<PublicKey> = committee.iter().map(|v| v.0.clone()).collect();
+    peers.sort();
 
     let config = EngineConfig::get_engine_config(
         engine_url,
@@ -241,11 +267,19 @@ pub fn run_node_with_runtime(
         flags.key_path.clone(),
         peers.clone(),
         flags.db_prefix.clone(),
+        &genesis,
     )
     .unwrap();
 
     let our_ip = committee
-        .ip_of(&config.signer.public_key())
+        .iter()
+        .find_map(|v| {
+            if v.0 == config.signer.public_key() {
+                Some(v.1)
+            } else {
+                None
+            }
+        })
         .expect("This node is not on the committee");
 
     context.spawn(async move |context| {
@@ -253,11 +287,11 @@ pub fn run_node_with_runtime(
 
         let mut p2p_cfg = authenticated::Config::aggressive(
             config.signer.clone(),
-            NAMESPACE,
+            genesis.namespace.as_bytes(),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), flags.port),
             our_ip,
-            committee.validators,
-            MAX_MESSAGE_SIZE,
+            committee,
+            genesis.max_message_size_bytes as usize,
         );
         p2p_cfg.mailbox_size = config.mailbox_size;
 

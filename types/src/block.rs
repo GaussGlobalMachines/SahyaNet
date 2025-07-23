@@ -11,10 +11,6 @@ use commonware_cryptography::{
 };
 use ssz::Encode as _;
 
-pub const GENESIS_HASH: [u8; 32] = [
-    0x68, 0x37, 0x13, 0x72, 0x9f, 0xcb, 0x72, 0xbe, 0x6f, 0x3d, 0x8b, 0x88, 0xc8, 0xcd, 0xa3, 0xe1,
-    0x05, 0x69, 0xd7, 0x3b, 0x96, 0x40, 0xd3, 0xbf, 0x6f, 0x51, 0x84, 0xd9, 0x4b, 0xd9, 0x76, 0x16,
-];
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Block {
     pub parent: Digest,
@@ -34,8 +30,9 @@ pub struct Block {
 
 impl Block {
     pub fn eth_block_hash(&self) -> [u8; 32] {
+        // if genesis return your own digest
         if self.height == 0 {
-            GENESIS_HASH
+            self.digest.as_ref().try_into().unwrap()
         } else {
             self.payload.payload_inner.payload_inner.block_hash.into()
         }
@@ -73,15 +70,11 @@ impl Block {
         }
     }
 
-    pub fn genesis_hash() -> [u8; 32] {
-        GENESIS_HASH
-    }
-
-    pub fn genesis() -> Self {
+    pub fn genesis(genesis_hash: [u8; 32]) -> Self {
         Self {
             execution_requests: Default::default(),
-            digest: GENESIS_HASH.into(),
-            parent: GENESIS_HASH.into(),
+            digest: genesis_hash.into(),
+            parent: genesis_hash.into(),
             height: 0,
             timestamp: 0,
             payload: ExecutionPayloadV3::from_block_slow(&AlloyBlock::<TxEnvelope>::default()),

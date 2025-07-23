@@ -56,13 +56,14 @@ pub struct Actor<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock
     built_block: Arc<Mutex<Option<Block>>>,
     finalizer: Option<Finalizer<R>>,
     tx_height_notify: mpsc::Sender<(u64, oneshot::Sender<()>)>,
+    genesis_hash: [u8; 32],
 }
 
 impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Actor<R> {
     pub async fn new(context: R, cfg: ApplicationConfig) -> (Self, Mailbox, Supervisor) {
         let (tx, rx) = mpsc::channel(cfg.mailbox_size);
 
-        let genesis_hash = Block::genesis_hash();
+        let genesis_hash = cfg.genesis_hash;
         let forkchoice = Arc::new(Mutex::new(ForkchoiceState {
             head_block_hash: genesis_hash.into(),
             safe_block_hash: genesis_hash.into(),
@@ -87,6 +88,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
                 built_block: Arc::new(Mutex::new(None)),
                 finalizer: Some(finalizer),
                 tx_height_notify,
+                genesis_hash,
             },
             Mailbox::new(tx),
             Supervisor::new(cfg.participants),
@@ -118,7 +120,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
             match message {
                 Message::Genesis { response } => {
                     info!("Handling message Genesis");
-                    let _ = response.send(Block::genesis_hash().into());
+                    let _ = response.send(self.genesis_hash.into());
                 }
                 Message::Propose {
                     view,
@@ -129,30 +131,28 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
 
                     let built = self.built_block.clone();
                     select! {
-                              res = self.handle_proposal(parent, &mut syncer) => {
+                            res = self.handle_proposal(parent, &mut syncer) => {
 
-                                  match res {
-                                      Ok(block) => {
-                                          // store block
-                                          let digest = block.digest;
-                                          {
-                                              let mut built = built.lock().expect("locked poisoned");
-                                              *built = Some(block);
-                                          }
+                                match res {
+                                    Ok(block) => {
+                                        // store block
+                                        let digest = block.digest;
+                                        {
+                                            let mut built = built.lock().expect("locked poisoned");
+                                            *built = Some(block);
+                                        }
 
-                                          // send digest to consensus
-                                          let _ = response.send(digest);
-                                      },
-                                      Err(e) => warn!("Failed to create a block for height {view}: {e}")
-                                  }
-                              },
-                              _ = oneshot_closed_future(&mut response) => {
-                                  // simplex dropped reciever
-                                  warn!(view, "proposal aborted");
-                              }
-                    //      }
-                      }
-                    //  });
+                                        // send digest to consensus
+                                        let _ = response.send(digest);
+                                    },
+                                    Err(e) => warn!("Failed to create a block for height {view}: {e}")
+                                }
+                            },
+                            _ = oneshot_closed_future(&mut response) => {
+                                // simplex dropped reciever
+                                warn!(view, "proposal aborted");
+                            }
+                    }
                 }
                 Message::Broadcast { payload } => {
                     info!("{rand_id} Handling message Broadcast");
@@ -180,8 +180,8 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
                 } => {
                     info!("{rand_id} Handling message Verify view: {}", view);
                     // Get the parent block
-                    let parent_request = if parent.1 == Block::genesis_hash().into() {
-                        Either::Left(future::ready(Ok(Block::genesis())))
+                    let parent_request = if parent.1 == self.genesis_hash.into() {
+                        Either::Left(future::ready(Ok(Block::genesis(self.genesis_hash))))
                     } else {
                         Either::Right(syncer.get(Some(parent.0), parent.1).await)
                     };
@@ -226,8 +226,8 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
         syncer: &mut seismicbft_syncer::Mailbox,
     ) -> Result<Block> {
         // Get the parent block
-        let parent_request = if parent.1 == Block::genesis_hash().into() {
-            Either::Left(future::ready(Ok(Block::genesis())))
+        let parent_request = if parent.1 == self.genesis_hash.into() {
+            Either::Left(future::ready(Ok(Block::genesis(self.genesis_hash))))
         } else {
             Either::Right(syncer.get(Some(parent.0), parent.1).await)
         };
@@ -241,7 +241,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
             .expect("finalizer dropped");
 
         // await for notification
-        let _ = rx.await.expect("Finalizer dropped");
+        rx.await.expect("Finalizer dropped");
 
         let mut current = self.context.current().epoch_millis();
         if current <= parent.timestamp {
@@ -280,15 +280,12 @@ fn handle_verify(block: &Block, parent: Block) -> bool {
         return false;
     }
     if block.parent != parent.digest {
-        tracing::error!("2");
         return false;
     }
     if block.height != parent.height + 1 {
-        tracing::error!("3");
         return false;
     }
     if block.timestamp <= parent.timestamp {
-        tracing::error!("4");
         return false;
     }
     true

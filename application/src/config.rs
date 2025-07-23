@@ -16,4 +16,6 @@ pub struct ApplicationConfig {
     pub engine_jwt: String,
 
     pub partition_prefix: String,
+
+    pub genesis_hash: [u8; 32],
 }

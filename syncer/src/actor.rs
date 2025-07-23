@@ -21,7 +21,7 @@ use commonware_storage::{
 use futures::{StreamExt as _, channel::mpsc};
 use governor::Quota;
 use rand::Rng;
-use seismicbft_types::{Block, Digest, Finalized, NAMESPACE, Notarized, PublicKey, Signature};
+use seismicbft_types::{Block, Digest, Finalized, Notarized, PublicKey, Signature};
 use tracing::{debug, warn};
 
 const REPLAY_BUFFER: usize = 8 * 1024 * 1024;
@@ -48,6 +48,7 @@ pub struct Actor<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock
     mailbox_size: usize,
     backfill_quota: Quota,
     activity_timeout: u64,
+    namespace: String,
 }
 
 impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Actor<R> {
@@ -143,6 +144,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
                 mailbox_size: config.mailbox_size,
                 backfill_quota: config.backfill_quota,
                 activity_timeout: config.activity_timeout,
+                namespace: config.namespace,
             },
             Mailbox::new(tx),
             orchestrator,
@@ -460,7 +462,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
                                         continue;
                                     };
 
-                                    if !notarization.proof.verify(NAMESPACE, &self.participants) {
+                                    if !notarization.proof.verify(self.namespace.as_bytes(), &self.participants) {
                                         let _ = response.send(false);
                                         continue;
                                     }
@@ -494,7 +496,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
                                         let _ = response.send(false);
                                         continue;
                                     };
-                                    if !finalization.proof.verify(NAMESPACE, &self.participants) {
+                                    if !finalization.proof.verify(self.namespace.as_bytes(), &self.participants) {
                                         let _ = response.send(false);
                                         continue;
                                     }
