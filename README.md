@@ -77,10 +77,6 @@ Summit acts as the consensus layer, communicating with EVM execution clients thr
 - [Commonware Library](https://commonware.xyz)
 - [Alto Consensus Example](https://github.com/commonwarexyz/alto)
 
-## License
-
-[Add license information]
-
 ## Status
 
 ⚠️ **Work in Progress** - This project is under active development. APIs and features may change.
