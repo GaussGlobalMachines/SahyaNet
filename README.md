@@ -84,6 +84,14 @@ Summit acts as the consensus layer, communicating with EVM execution clients thr
 - Consensus finalization
 - Network communication
 
+## Next steps / Future Roadmap
+- Dynamic Validator sets and staking through the Ethereum staking contract
+  - Currently Summit just uses a static validator set at Genesis
+  - We will leverage EVMs staking contract and add and remove validators in a similar fashion as Ethereum
+- Deeper benchmarks
+- More optimizations (potentially DKG threshold signatures to improve throughput)
+- Full Audit and completeness Q4 2025
+
 ## Resources
 
 - [Simplex Consensus Protocol Paper](https://eprint.iacr.org/2023/463)
