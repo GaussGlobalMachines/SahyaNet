@@ -13,7 +13,20 @@ Summit is a high-performance consensus client designed to drive EVM-based blockc
 - **BLS12-381 Cryptography**: Secure validator key management
 - **Built with Commonware**: Leverages primitives from the [Commonware library](https://commonware.xyz)
 
-Summit uses the Simplex protocol, a responsive consensus mechanism that adapts to network conditions rather than waiting for predetermined timeouts. This allows the network to move as fast as conditions permit, achieving sub-second block times in most cases (reproducible benchmarks coming soon).
+Summit uses the Simplex protocol, a responsive consensus mechanism that adapts to network conditions rather than waiting for predetermined timeouts. This allows the network to move as fast as conditions permit, achieving sub-second block times in most cases.
+
+## Benchmarks
+
+We run our benchmarks using EC2 instances spread across these regions: `["us-west-2", "eu-central-1", "us-east-1", "ap-northeast-1", "sa-east-1"]`. We use 100 kB blocks.
+
+| Metric             | 5 nodes  | 10 nodes  | 20 nodes   | 100 nodes  |  500 nodes  |  1000 nodes  |
+|--------            |----------|-----------|------------|------------|-------------|-------------|
+| Average TPS        | 707 tx/s | 962 tx/s  | 1051 tx/s  | TBD        | TBD         | TBD         |
+| Average Block Time | 1290ms   | 940ms     | 870ms      | TBD        | TBD         | TBD         |
+
+The TBD benchmarks are currently running (7/24/25). With 20 nodes and under, the mempool is more of a bottleneck than consensus. This is why we see performance increasing for the first few columns.
+
+You can reproduce these results by running the sequence in [this repository](https://github.com/SeismicSystems/testnet-benchmarking). 
 
 ## Installation
 
