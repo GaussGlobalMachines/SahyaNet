@@ -8,9 +8,9 @@ edition = "2024"
 
 [workspace.dependencies]
 # Our crates
-seismicbft-types = {path = "types"}
-seismicbft-syncer = {path = "syncer"}
-seismicbft-application = {path = "application"}
+summit-types = {path = "types"}
+summit-syncer = {path = "syncer"}
+summit-application= {path = "application"}
 
 anyhow = "1.0.98"
 bytes = "1.10.1"

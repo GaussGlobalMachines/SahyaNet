@@ -15,7 +15,7 @@ use futures::{
 #[cfg(feature = "prom")]
 use metrics::{counter, histogram};
 use rand::Rng;
-use seismicbft_syncer::Orchestrator;
+use summit_syncer::Orchestrator;
 use tracing::{debug, info};
 
 use crate::engine_client::EngineClient;

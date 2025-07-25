@@ -7,7 +7,7 @@ use futures::{
     SinkExt as _,
     channel::{mpsc, oneshot},
 };
-use seismicbft_types::{Activity, Block, Signature};
+use summit_types::{Activity, Block, Signature};
 use tracing::debug;
 
 pub enum Message {

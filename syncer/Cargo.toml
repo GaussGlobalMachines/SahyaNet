@@ -1,10 +1,10 @@
 [package]
-name = "seismicbft-syncer"
+name = "summit-syncer"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-seismicbft-types.workspace = true
+summit-types.workspace = true
 
 commonware-broadcast.workspace = true
 commonware-codec.workspace = true

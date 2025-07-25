@@ -1,12 +1,12 @@
 [package]
-name = "seismicbft-node"
+name = "summit"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-seismicbft-syncer.workspace = true
-seismicbft-types.workspace = true
-seismicbft-application.workspace = true
+summit-syncer.workspace = true
+summit-types.workspace = true
+summit-application.workspace = true
 
 commonware-broadcast.workspace = true
 commonware-codec.workspace = true

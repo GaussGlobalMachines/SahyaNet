@@ -19,7 +19,7 @@ use std::{
 use alloy_node_bindings::Reth;
 use clap::Parser;
 use commonware_runtime::{Metrics as _, Runner as _, Spawner as _, tokio};
-use seismicbft_node::args::{Flags, run_node_with_runtime};
+use summit::args::{Flags, run_node_with_runtime};
 use tracing::Level;
 
 #[derive(Parser, Debug)]

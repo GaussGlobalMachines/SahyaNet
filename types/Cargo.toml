@@ -1,5 +1,5 @@
 [package]
-name = "seismicbft-types"
+name = "summit-types"
 version.workspace = true
 edition.workspace = true
 

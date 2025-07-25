@@ -1,5 +1,5 @@
 use clap::Parser as _;
-use seismicbft_node::args::CliArgs;
+use summit::args::CliArgs;
 
 fn main() {
     let args = CliArgs::parse();
