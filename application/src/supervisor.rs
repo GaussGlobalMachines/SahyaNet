@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use commonware_consensus::{Supervisor as Su, simplex::types::View};
-use seismicbft_types::PublicKey;
+use summit_types::PublicKey;
 
 #[derive(Clone)]
 pub struct Supervisor {

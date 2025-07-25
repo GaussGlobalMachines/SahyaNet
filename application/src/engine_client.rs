@@ -28,7 +28,7 @@ use alloy_transport_http::{
     hyper_util::{client::legacy::Client, rt::TokioExecutor},
 };
 use http_body_util::Full;
-use seismicbft_types::Block;
+use summit_types::Block;
 
 #[derive(Clone)]
 pub struct EngineClient {

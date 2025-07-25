@@ -21,7 +21,7 @@ use commonware_storage::{
 use futures::{StreamExt as _, channel::mpsc};
 use governor::Quota;
 use rand::Rng;
-use seismicbft_types::{Block, Digest, Finalized, Notarized, PublicKey, Signature};
+use summit_types::{Block, Digest, Finalized, Notarized, PublicKey, Signature};
 use tracing::{debug, warn};
 
 const REPLAY_BUFFER: usize = 8 * 1024 * 1024;

@@ -1,4 +1,4 @@
-use seismicbft_types::PublicKey;
+use summit_types::PublicKey;
 
 #[derive(Clone)]
 pub struct ApplicationConfig {

@@ -10,7 +10,7 @@ use commonware_p2p::authenticated;
 use commonware_runtime::{Handle, Metrics as _, Runner, Spawner as _, tokio};
 use futures::future::try_join_all;
 use governor::Quota;
-use seismicbft_types::{Genesis, PublicKey};
+use summit_types::{Genesis, PublicKey};
 use tracing::{Level, error};
 
 use crate::{

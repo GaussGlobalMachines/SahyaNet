@@ -15,15 +15,15 @@ use futures::{
     future::{self, Either, try_join},
 };
 use rand::Rng;
-use seismicbft_syncer::{Orchestrator, ingress::Mailbox as SyncerMailbox};
+use summit_syncer::{Orchestrator, ingress::Mailbox as SyncerMailbox};
 
 use futures::task::{Context, Poll};
-use seismicbft_types::{Block, Digest};
 use std::{
     pin::Pin,
     sync::{Arc, Mutex},
     time::Duration,
 };
+use summit_types::{Block, Digest};
 use tracing::{error, info, warn};
 
 // Define a future that checks if the oneshot channel is closed using a mutable reference
@@ -97,7 +97,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
 
     pub fn start(
         mut self,
-        syncer: seismicbft_syncer::Mailbox,
+        syncer: summit_syncer::Mailbox,
         orchestrator: Orchestrator,
         finalizer_network: (mpsc::Sender<()>, mpsc::Receiver<()>),
     ) -> Handle<()> {
@@ -223,7 +223,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
     async fn handle_proposal(
         &mut self,
         parent: (u64, Digest),
-        syncer: &mut seismicbft_syncer::Mailbox,
+        syncer: &mut summit_syncer::Mailbox,
     ) -> Result<Block> {
         // Get the parent block
         let parent_request = if parent.1 == self.genesis_hash.into() {

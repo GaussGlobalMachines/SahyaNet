@@ -3,7 +3,7 @@ use std::{num::NonZeroU32, time::Duration};
 use anyhow::Result;
 use commonware_utils::from_hex_formatted;
 use governor::Quota;
-use seismicbft_types::{Genesis, PrivateKey, PublicKey};
+use summit_types::{Genesis, PrivateKey, PublicKey};
 
 use crate::{keys::read_bls_key_from_path, utils::get_expanded_path};
 

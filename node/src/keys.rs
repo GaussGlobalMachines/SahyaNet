@@ -5,7 +5,7 @@ use commonware_codec::extensions::DecodeExt;
 
 use commonware_cryptography::{PrivateKeyExt as _, Signer};
 use commonware_utils::from_hex_formatted;
-use seismicbft_types::PrivateKey;
+use summit_types::PrivateKey;
 
 #[derive(Subcommand, PartialEq, Eq, Debug, Clone)]
 pub enum KeySubCmd {

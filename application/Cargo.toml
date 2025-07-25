@@ -1,11 +1,11 @@
 [package]
-name = "seismicbft-application"
+name = "summit-application"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-seismicbft-syncer.workspace = true
-seismicbft-types.workspace = true
+summit-syncer.workspace = true
+summit-types.workspace = true
 
 anyhow.workspace = true
 tracing.workspace = true

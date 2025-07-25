@@ -6,9 +6,9 @@ use commonware_runtime::{Clock, Handle, Metrics, Spawner, Storage};
 use futures::{channel::mpsc, future::try_join_all};
 use governor::clock::Clock as GClock;
 use rand::{CryptoRng, Rng};
-use seismicbft_application::ApplicationConfig;
-use seismicbft_syncer::Orchestrator;
-use seismicbft_types::{Block, Digest, PrivateKey, PublicKey};
+use summit_application::ApplicationConfig;
+use summit_syncer::Orchestrator;
+use summit_types::{Block, Digest, PrivateKey, PublicKey};
 use tracing::{error, warn};
 
 use crate::config::EngineConfig;
@@ -22,27 +22,27 @@ const MAX_PARTICIPANTS: usize = 10_000;
 
 pub struct Engine<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> {
     context: E,
-    application: seismicbft_application::Actor<E>,
+    application: summit_application::Actor<E>,
     buffer: buffered::Engine<E, PublicKey, Block>,
     buffer_mailbox: buffered::Mailbox<PublicKey, Block>,
-    syncer: seismicbft_syncer::Actor<E>,
+    syncer: summit_syncer::Actor<E>,
     orchestrator: Orchestrator,
-    syncer_mailbox: seismicbft_syncer::Mailbox,
+    syncer_mailbox: summit_syncer::Mailbox,
     simplex: Simplex<
         E,
         PrivateKey,
         Digest,
-        seismicbft_application::Mailbox,
-        seismicbft_application::Mailbox,
-        seismicbft_syncer::Mailbox,
-        seismicbft_application::Supervisor,
+        summit_application::Mailbox,
+        summit_application::Mailbox,
+        summit_syncer::Mailbox,
+        summit_application::Supervisor,
     >,
 }
 
 impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E> {
     pub async fn new(context: E, cfg: EngineConfig) -> Self {
         // create application
-        let (application, application_mailbox, supervisor) = seismicbft_application::Actor::new(
+        let (application, application_mailbox, supervisor) = summit_application::Actor::new(
             context.with_label("application"),
             ApplicationConfig {
                 participants: cfg.participants.clone(),
@@ -68,7 +68,7 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
         );
 
         // create the syncer
-        let syncer_config = seismicbft_syncer::Config {
+        let syncer_config = summit_syncer::Config {
             partition_prefix: cfg.partition_prefix.clone(),
             public_key: cfg.signer.public_key(),
             participants: cfg.participants,
@@ -78,7 +78,7 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
             namespace: cfg.namespace.clone(),
         };
         let (syncer, syncer_mailbox, orchestrator) =
-            seismicbft_syncer::Actor::new(context.with_label("syncer"), syncer_config).await;
+            summit_syncer::Actor::new(context.with_label("syncer"), syncer_config).await;
 
         // create simplex
         let simplex = Simplex::new(
@@ -89,7 +89,7 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
                 relay: application_mailbox.clone(),
                 reporter: syncer_mailbox.clone(),
                 supervisor,
-                partition: format!("{}-seismicbft", cfg.partition_prefix),
+                partition: format!("{}-summit", cfg.partition_prefix),
                 compression: None,
                 mailbox_size: cfg.mailbox_size,
                 namespace: cfg.namespace.clone().as_bytes().to_vec(),

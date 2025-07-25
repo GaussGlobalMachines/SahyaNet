@@ -1,13 +1,13 @@
 use bytes::{Buf, BufMut};
 use commonware_codec::{Error, FixedSize, Read, ReadExt, Write};
 use commonware_utils::Array;
-use seismicbft_types::Digest;
 use std::{
     cmp::{Ord, PartialOrd},
     fmt::{Debug, Display},
     hash::Hash,
     ops::Deref,
 };
+use summit_types::Digest;
 
 const SIZE: usize = u8::SIZE + Digest::SIZE;
 

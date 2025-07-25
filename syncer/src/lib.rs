@@ -6,7 +6,7 @@ pub mod coordinator;
 pub mod handler;
 pub mod key;
 
-use seismicbft_types::PublicKey;
+use summit_types::PublicKey;
 
 /// Configuration for the syncer.
 pub struct Config {
