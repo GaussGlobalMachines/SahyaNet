@@ -1,7 +1,7 @@
 # WIP
 # Summit
 
-<img width="4800" height="2700" alt="Summit consensus client" src="https://github.com/user-attachments/assets/e54347ea-ec0a-4540-884e-496f716dbabd" />
+<img alt="Summit consensus client" src="assets/graphic.png" />
 
 Summit is a high-performance consensus client designed to drive EVM-based blockchains. Originally built to power the Seismic Blockchain, Summit works with any EVM client that implements the Engine API.
 
