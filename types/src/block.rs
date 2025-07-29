@@ -168,12 +168,15 @@ impl ssz::Decode for Block {
 
 impl EncodeSize for Block {
     fn encode_size(&self) -> usize {
-        self.ssz_bytes_len() + ssz::BYTES_PER_LENGTH_OFFSET
+        self.ssz_bytes_len() + ssz::BYTES_PER_LENGTH_OFFSET * 2
     }
 }
 
 impl Write for Block {
     fn write(&self, buf: &mut impl BufMut) {
+        let ssz_bytes = &*self.as_ssz_bytes();
+        let bytes_len = ssz_bytes.len() as u32;
+        buf.put(&bytes_len.to_be_bytes()[..]);
         buf.put(&*self.as_ssz_bytes());
     }
 }
@@ -182,7 +185,9 @@ impl Read for Block {
     type Cfg = ();
 
     fn read_cfg(buf: &mut impl Buf, _cfg: &Self::Cfg) -> Result<Self, commonware_codec::Error> {
-        ssz::Decode::from_ssz_bytes(buf.copy_to_bytes(buf.remaining()).chunk()).map_err(|_| {
+        let len = buf.get_u32();
+
+        ssz::Decode::from_ssz_bytes(buf.copy_to_bytes(len as usize).chunk()).map_err(|_| {
             commonware_codec::Error::Invalid("Block", "Unable to decode bytes for block")
         })
     }
@@ -384,7 +389,4 @@ mod test {
 
         assert_eq!(block, decoded);
     }
-
-    #[test]
-    fn test_serialization() {}
 }
