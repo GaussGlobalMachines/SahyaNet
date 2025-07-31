@@ -1,13 +1,16 @@
 use commonware_broadcast::buffered;
-use commonware_consensus::simplex::{self, Engine as Simplex};
-use commonware_cryptography::Signer as _;
-use commonware_p2p::{Receiver, Sender};
+use commonware_consensus::threshold_simplex::{self, Engine as Simplex};
+use commonware_cryptography::{
+    Signer as _,
+    bls12381::primitives::{poly::public, variant::MinPk},
+};
+use commonware_p2p::{Blocker, Receiver, Sender};
 use commonware_runtime::{Clock, Handle, Metrics, Spawner, Storage};
 use futures::{channel::mpsc, future::try_join_all};
 use governor::clock::Clock as GClock;
 use rand::{CryptoRng, Rng};
 use summit_application::ApplicationConfig;
-use summit_syncer::Orchestrator;
+use summit_syncer::{Orchestrator, registry::Registry};
 use summit_types::{Block, Digest, PrivateKey, PublicKey};
 use tracing::{error, warn};
 
@@ -17,10 +20,11 @@ use crate::config::EngineConfig;
 /// the consensus activity timeout by this factor.
 const REPLAY_BUFFER: usize = 8 * 1024 * 1024;
 const WRITE_BUFFER: usize = 1024 * 1024;
-// todo: explore implications of this with simplex
-const MAX_PARTICIPANTS: usize = 10_000;
 
-pub struct Engine<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> {
+pub struct Engine<
+    E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics,
+    B: Blocker<PublicKey = PublicKey>,
+> {
     context: E,
     application: summit_application::Actor<E>,
     buffer: buffered::Engine<E, PublicKey, Block>,
@@ -31,21 +35,27 @@ pub struct Engine<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metr
     simplex: Simplex<
         E,
         PrivateKey,
+        B,
+        MinPk,
         Digest,
         summit_application::Mailbox,
         summit_application::Mailbox,
         summit_syncer::Mailbox,
-        summit_application::Supervisor,
+        Registry,
     >,
 }
 
-impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E> {
-    pub async fn new(context: E, cfg: EngineConfig) -> Self {
+impl<
+    E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics,
+    B: Blocker<PublicKey = PublicKey>,
+> Engine<E, B>
+{
+    pub async fn new(context: E, cfg: EngineConfig, blocker: B) -> Self {
+        let identity = *public::<MinPk>(&cfg.polynomial);
         // create application
-        let (application, application_mailbox, supervisor) = summit_application::Actor::new(
+        let (application, application_mailbox) = summit_application::Actor::new(
             context.with_label("application"),
             ApplicationConfig {
-                participants: cfg.participants.clone(),
                 mailbox_size: cfg.mailbox_size,
                 engine_url: cfg.engine_url,
                 engine_jwt: cfg.engine_jwt,
@@ -67,15 +77,18 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
             },
         );
 
+        let registry = Registry::new(cfg.participants, cfg.polynomial, cfg.share);
+
         // create the syncer
         let syncer_config = summit_syncer::Config {
             partition_prefix: cfg.partition_prefix.clone(),
             public_key: cfg.signer.public_key(),
-            participants: cfg.participants,
+            registry: registry.clone(),
             mailbox_size: cfg.mailbox_size,
             backfill_quota: cfg.backfill_quota,
             activity_timeout: cfg.activity_timeout,
             namespace: cfg.namespace.clone(),
+            identity,
         };
         let (syncer, syncer_mailbox, orchestrator) =
             summit_syncer::Actor::new(context.with_label("syncer"), syncer_config).await;
@@ -83,12 +96,13 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
         // create simplex
         let simplex = Simplex::new(
             context.with_label("simplex"),
-            simplex::Config {
+            threshold_simplex::Config {
+                blocker,
                 crypto: cfg.signer,
                 automaton: application_mailbox.clone(),
                 relay: application_mailbox.clone(),
                 reporter: syncer_mailbox.clone(),
-                supervisor,
+                supervisor: registry,
                 partition: format!("{}-summit", cfg.partition_prefix),
                 compression: None,
                 mailbox_size: cfg.mailbox_size,
@@ -99,7 +113,6 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
                 notarization_timeout: cfg.notarization_timeout,
                 nullify_retry: cfg.nullify_retry,
                 activity_timeout: cfg.activity_timeout,
-                max_participants: MAX_PARTICIPANTS,
                 skip_timeout: cfg.skip_timeout,
                 fetch_timeout: cfg.fetch_timeout,
                 max_fetch_count: cfg.max_fetch_count,
@@ -125,7 +138,11 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
     /// This will also rebuild the state of the engine from provided `Journal`.
     pub fn start(
         self,
-        voter_network: (
+        pending_network: (
+            impl Sender<PublicKey = PublicKey>,
+            impl Receiver<PublicKey = PublicKey>,
+        ),
+        recovered_network: (
             impl Sender<PublicKey = PublicKey>,
             impl Receiver<PublicKey = PublicKey>,
         ),
@@ -144,7 +161,8 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
     ) -> Handle<()> {
         self.context.clone().spawn(|_| {
             self.run(
-                voter_network,
+                pending_network,
+                recovered_network,
                 resolver_network,
                 broadcast_network,
                 backfill_network,
@@ -157,7 +175,11 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
     /// This will also rebuild the state of the engine from provided `Journal`.
     async fn run(
         self,
-        voter_network: (
+        pending_network: (
+            impl Sender<PublicKey = PublicKey>,
+            impl Receiver<PublicKey = PublicKey>,
+        ),
+        recovered_network: (
             impl Sender<PublicKey = PublicKey>,
             impl Receiver<PublicKey = PublicKey>,
         ),
@@ -187,7 +209,9 @@ impl<E: Clock + GClock + Rng + CryptoRng + Spawner + Storage + Metrics> Engine<E
             .syncer
             .start(self.buffer_mailbox, backfill_network, tx_finalizer);
         // start simplex
-        let simplex_handle = self.simplex.start(voter_network, resolver_network);
+        let simplex_handle =
+            self.simplex
+                .start(pending_network, recovered_network, resolver_network);
 
         // Wait for any actor to finish
         if let Err(e) = try_join_all(vec![

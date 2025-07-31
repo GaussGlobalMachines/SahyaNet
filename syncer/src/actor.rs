@@ -1,17 +1,19 @@
 use std::{collections::BTreeSet, time::Duration};
 
+use crate::registry::Registry;
 use crate::{
     Orchestration, Orchestrator,
-    coordinator::Coordinator,
     handler::Handler,
     ingress::{Mailbox, Message},
     key::{MultiIndex, Value},
 };
 use commonware_broadcast::{Broadcaster as _, buffered};
 use commonware_codec::{DecodeExt as _, Encode as _};
-use commonware_consensus::simplex::types::{Finalization, Viewable as _};
+use commonware_consensus::threshold_simplex::types::{Finalization, Viewable as _};
+use commonware_cryptography::bls12381::primitives::variant::MinPk;
 use commonware_macros::select;
 use commonware_p2p::{Receiver, Recipients, Sender, utils::requester};
+use commonware_resolver::p2p::Coordinator;
 use commonware_resolver::{Resolver as _, p2p};
 use commonware_runtime::{Clock, Handle, Metrics, Spawner, Storage};
 use commonware_storage::{
@@ -24,7 +26,7 @@ use commonware_storage::{
 use futures::{StreamExt as _, channel::mpsc};
 use governor::Quota;
 use rand::Rng;
-use summit_types::{Block, Digest, Finalized, Notarized, PublicKey, Signature};
+use summit_types::{Block, Digest, Finalized, Identity, Notarized, PublicKey};
 use tracing::{debug, warn};
 
 const REPLAY_BUFFER: usize = 8 * 1024 * 1024;
@@ -40,17 +42,18 @@ pub struct Actor<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock
     notarized: PrunableArchive<TwoCap, R, Digest, Notarized>,
 
     // Finalizations stored by height
-    finalized: ImmutableArchive<R, Digest, Finalization<Signature, Digest>>,
+    finalized: ImmutableArchive<R, Digest, Finalization<MinPk, Digest>>,
     // Blocks finalized stored by height
     //
     // We store this separately because we may not have the finalization for a block
     blocks: ImmutableArchive<R, Digest, Block>,
     public_key: PublicKey,
-    participants: Vec<PublicKey>,
+    registry: Registry,
     mailbox_size: usize,
     backfill_quota: Quota,
     activity_timeout: u64,
     namespace: String,
+    identity: Identity,
 }
 
 impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Actor<R> {
@@ -103,7 +106,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
                 items_per_section: 1024,
                 write_buffer: WRITE_BUFFER,
                 replay_buffer: REPLAY_BUFFER,
-                codec_config: usize::MAX,
+                codec_config: (),
             },
         )
         .await
@@ -143,11 +146,12 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
                 finalized: finalized_archive,
                 blocks: block_archive,
                 public_key: config.public_key,
-                participants: config.participants,
+                registry: config.registry,
                 mailbox_size: config.mailbox_size,
                 backfill_quota: config.backfill_quota,
                 activity_timeout: config.activity_timeout,
                 namespace: config.namespace,
+                identity: config.identity,
             },
             Mailbox::new(tx),
             orchestrator,
@@ -175,14 +179,13 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
         ),
         mut tx_finalizer: mpsc::Sender<()>,
     ) {
-        let coordinator = Coordinator::new(self.participants.clone());
         let (handler_sender, mut handler_receiver) = mpsc::channel(self.mailbox_size);
         let handler = Handler::new(handler_sender);
 
         let (resolver_engine, mut resolver) = p2p::Engine::new(
             self.context.with_label("resolver"),
             p2p::Config {
-                coordinator,
+                coordinator: self.registry.clone(),
                 consumer: handler.clone(),
                 producer: handler,
                 mailbox_size: self.mailbox_size,
@@ -465,7 +468,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
                                         continue;
                                     };
 
-                                    if !notarization.proof.verify(self.namespace.as_bytes(), &self.participants) {
+                                    if !notarization.proof.verify(self.namespace.as_bytes(), &self.identity) {
                                         let _ = response.send(false);
                                         continue;
                                     }
@@ -499,7 +502,7 @@ impl<R: Storage + Metrics + Clock + Spawner + governor::clock::Clock + Rng> Acto
                                         let _ = response.send(false);
                                         continue;
                                     };
-                                    if !finalization.proof.verify(self.namespace.as_bytes(), &self.participants) {
+                                    if !finalization.proof.verify(self.namespace.as_bytes(), &self.identity) {
                                         let _ = response.send(false);
                                         continue;
                                     }
