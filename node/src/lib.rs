@@ -1,3 +1,4 @@
+#![feature(unsigned_abs)]
 pub mod args;
 mod config;
 mod engine;
